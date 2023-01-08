@@ -28,7 +28,9 @@ class MVP(BaseModel):
 
 def get_data() -> pd.DataFrame:
     """
-    
+    This function gets data from basketball reference and returns it as a data frame in the form of 
+    Player Team GP	PPG	DRPG APG FG	WS USG% VORP BPM
+    :return df: A data frame in the form of Player Team GP	PPG	DRPG APG FG	WS USG% VORP BPM
     """
     URL = "https://www.basketball-reference.com/leagues/NBA_2023_per_game.html"
     page = requests.get(URL)
@@ -39,13 +41,13 @@ def get_data() -> pd.DataFrame:
     rows = stats_table.tbody.find_all('tr', attrs={'class': 'full_table'})
     for row in rows:
             player_stats.append({
-            'Player': row.find('td', {'data-stat': 'player'}).text,
+            'Player': row.find('td', {'data-stat': 'player'}).text, # ['PTSPG', 'ASTPG', 'WS', 'BLKPG', 'DRBPG', 'VORP', 'BPM', 'USG%', 'FGPG']
             'Team': row.find('td', {'data-stat': 'team_id'}).text,
-            'GP': row.find('td', {'data-stat': 'blk_per_g'}).text,
-            'PPG': row.find('td', {'data-stat': 'pts_per_g'}).text,
-            'DRPG': row.find('td', {'data-stat': 'drb_per_g'}).text,
-            'APG': row.find('td', {'data-stat': 'ast_per_g'}).text,
-            'FG': row.find('td', {'data-stat': 'fg_per_g'}).text,
+            'PTSPG': row.find('td', {'data-stat': 'pts_per_g'}).text,
+            'ASTPG': row.find('td', {'data-stat': 'ast_per_g'}).text,
+            'BLKPG': row.find('td', {'data-stat': 'blk_per_g'}).text,
+            'DRBPG': row.find('td', {'data-stat': 'drb_per_g'}).text,
+            'FGPG': row.find('td', {'data-stat': 'fg_per_g'}).text,
             })
         
     stats_df= pd.DataFrame(player_stats)
@@ -74,38 +76,38 @@ def get_data() -> pd.DataFrame:
     return df 
 
 
-@app.post('/predict', tags=["predictions"])
-async def get_prediction(mvp: MVP):
-    URL = "https://www.basketball-reference.com/leagues/NBA_2022_per_game.html"
-    page = requests.get(URL)
-    soup = BeautifulSoup(page.content, 'html.parser')
+@app.get('/predict', tags=["predictions"])
+async def get_prediction():
 
-    stats_table = soup.find('table', {'id': 'per_game_stats'})
-    player_stats = []
-    for row in stats_table.tbody.find_all('tr'):
-        for row2 in row.find_all('td'):
-            #print(row2)
-            player_stats.append({
-            'Player': row.find('td', {'data-stat': 'player'}).text,
-            'Team': row.find('td', {'data-stat': 'team_id'}).text,
-            'GP': row.find('td', {'data-stat': 'blk_per_g'}).text,
-            'PPG': row.find('td', {'data-stat': 'pts_per_g'}).text,
-            'DRPG': row.find('td', {'data-stat': 'drb_per_g'}).text,
-            'APG': row.find('td', {'data-stat': 'ast_per_g'}).text,
-            'FG': row.find('td', {'data-stat': 'fg_per_g'}).text,
-        })
-
-    # # for row2 in row.find_all('td'):
-    # #     print(row2.text)
-
+    stats_df = get_data()
+    players = stats_df['Player']
+    teams = stats_df['Team']
+    X = stats_df.drop(columns=['Player', 'Team'])[['PTSPG', 'ASTPG', 'WS', 'BLKPG', 'DRBPG', 'VORP', 'BPM', 'USG%', 'FGPG']]
 
     rf_model = joblib.load("mvp_random_forest.joblib") # ['PTSPG', 'ASTPG', 'WS', 'BLKPG', 'DRBPG', 'VORP', 'BPM', 'USG%', 'FGPG']
     scaled_log_model = joblib.load("mvp_scaled_log.joblib")
-    data = dict(mvp)['data']
+    #data = dict(mvp)['data']
     #print(model)
-    prediction = rf_model.predict(data).tolist()
-    log_proba = rf_model.predict_proba(data).tolist()
-    return {"prediction": prediction,
-            "probs": log_proba,
-            "mvp_proba": log_proba[0][1],
-            "non_mvp_proba": log_proba[0][0]}
+    #prediction = rf_model.predict(data).tolist()
+    #log_proba = rf_model.predict_proba(data).tolist()
+
+    proba_scaled_log = scaled_log_model.predict_proba(X).tolist()
+    proba_RF = rf_model.predict_proba(X).tolist()
+    mvp_log_probs = []
+    mvp_rf_probs = []
+    for prob in proba_scaled_log:
+        mvp_log_probs.append(prob[1])
+    for prob in proba_RF:
+        mvp_rf_probs.append(prob[1])
+    # print(hand_select_models['Scaledlogistic']['fitted_model'].predict_proba(X).tolist())
+    # print(proba_RF)
+    # stats_df['results_scaled_log'] = results_scaled_log
+    # stats_df['results_RF'] = results_RF
+    stats_df['proba_scaled_log'] = mvp_log_probs
+    stats_df['proba_RF'] = mvp_rf_probs
+    result_df = stats_df.sort_values(by='proba_RF', ascending=False)[['Player', 'proba_scaled_log', 'proba_RF']].head(10)
+    return result_df.to_dict()
+    # return {"prediction": prediction,
+    #         "probs": log_proba,
+    #         "mvp_proba": log_proba[0][1],
+    #         "non_mvp_proba": log_proba[0][0]}
