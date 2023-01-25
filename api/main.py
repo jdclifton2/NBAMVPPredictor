@@ -13,6 +13,8 @@ app = FastAPI(title="MVP Predictor API", description="API for predicting NBA MVP
 
 rf_model = joblib.load("mvp_random_forest.joblib") # ['PTSPG', 'ASTPG', 'WS', 'BLKPG', 'DRBPG', 'VORP', 'BPM', 'USG%', 'FGPG']
 scaled_log_model = joblib.load("mvp_scaled_log.joblib")
+gb_model = joblib.load("mvp_gb.joblib")
+
 
 # @app.on_event('startup')
 # def load_model():
@@ -79,14 +81,20 @@ async def get_prediction():
 
     proba_scaled_log = scaled_log_model.predict_proba(X).tolist()
     proba_RF = rf_model.predict_proba(X).tolist()
+    proba_gb = gb_model.predict_proba(X).tolist()
     mvp_log_probs = []
     mvp_rf_probs = []
+    mvp_gb_probs = []
     for prob in proba_scaled_log:
         mvp_log_probs.append(prob[1])
     for prob in proba_RF:
         mvp_rf_probs.append(prob[1])
 
+    for prob in proba_gb:
+        mvp_gb_probs.append(prob[1])
+
     stats_df['proba_scaled_log'] = mvp_log_probs
     stats_df['proba_RF'] = mvp_rf_probs
-    result_df = stats_df.sort_values(by='proba_RF', ascending=False)[['Player', 'proba_scaled_log', 'proba_RF']].head(10)
+    stats_df['proba_gb'] = mvp_gb_probs
+    result_df = stats_df.sort_values(by='proba_scaled_log', ascending=False)[['Player', 'proba_scaled_log', 'proba_RF', 'proba_gb']].head(10)
     return result_df.to_dict()
